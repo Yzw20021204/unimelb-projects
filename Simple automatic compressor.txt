@@ -1,0 +1,631 @@
+/* Program to generate text based on the context provided by input prompts.
+
+  Skeleton program written by Artem Polyvyanyy, http://polyvyanyy.com/,
+  September 2023, with the intention that it be modified by students
+  to add functionality, as required by the assignment specification.
+  All included code is (c) Copyright University of Melbourne, 2023.
+
+  Student Authorship Declaration:
+
+  (1) I certify that except for the code provided in the initial skeleton file,
+  the program contained in this submission is completely my own individual
+  work, except where explicitly noted by further comments that provide details
+  otherwise. I understand that work that has been developed by another student,
+  or by me in collaboration with other students, or by non-students as a result
+  of request, solicitation, or payment, may not be submitted for assessment in
+  this subject. I understand that submitting for assessment work developed by
+  or in collaboration with other students or non-students constitutes Academic
+  Misconduct, and may be penalized by mark deductions, or by other penalties
+  determined via the University of Melbourne Academic Honesty Policy, as
+  described at https://academicintegrity.unimelb.edu.au.
+
+  (2) I also certify that I have not provided a copy of this work in either
+  softcopy or hardcopy or any other form to any other student, and nor will I
+  do so until after the marks are released. I understand that providing my work
+  to other students, regardless of my intention or any undertakings made to me
+  by that other student, is also Academic Misconduct.
+
+  (3) I further understand that providing a copy of the assignment specification
+  to any form of code authoring or assignment tutoring service, or drawing the
+  attention of others to such services and code that may have been made
+  available via such a service, may be regarded as Student General Misconduct
+  (interfering with the teaching activities of the University and/or inciting
+  others to commit Academic Misconduct). I understand that an allegation of
+  Student General Misconduct may arise regardless of whether or not I personally
+  make use of such solutions or sought benefit from such actions.
+
+  Signed by: [Ziwei Yu]
+  Dated:     [11/10/2023]
+*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <string.h>
+/* #DEFINE'S -----------------------------------------------------------------*/
+#define SDELIM "==STAGE %d============================\n"   // stage delimiter
+#define MDELIM "-------------------------------------\n"    // delimiter of -'s
+#define THEEND "==THE END============================\n"    // end message
+#define NOSFMT "Number of statements: %d\n"                 // no. of statements
+#define NOCFMT "Number of characters: %d\n"                 // no. of chars
+#define NPSFMT "Number of states: %d\n"                     // no. of states
+#define TFQFMT "Total frequency: %d\n"                      // total frequency
+#define CRTRNC '\r'                               // carriage return character
+
+/* TYPE DEFINITIONS ----------------------------------------------------------*/
+typedef struct state state_t;   // a state in an automaton
+typedef struct node  node_t;    // a node in a linked list
+
+
+struct node {                   // a node in a linked list of transitions has
+    char*           str;        // ... a transition string
+    state_t*        state;      // ... the state reached via the string, and
+    node_t*         next;       // ... a link to the next node in the list.
+};
+
+typedef struct {                // a linked list consists of
+    node_t*         head;       // ... a pointer to the first node and
+    node_t*         tail;       // ... a pointer to the last node in the list.
+} list_t;
+
+struct state {                  // a state in an automaton is characterized by
+    unsigned int    id;         // ... an identifier,
+    unsigned int    freq;       // ... frequency of traversal,
+    int             visited;    // ... visited status flag, and
+    int             deleted;
+    int             inactive;
+    list_t*         outputs;    // ... a list of output states.
+};
+
+typedef struct {                // an automaton consists of
+    state_t*        ini;        // ... the initial state, and
+    unsigned int    nid;        // ... the identifier of the next new state.
+} automaton_t;
+/* USEFUL FUNCTIONS ----------------------------------------------------------*/
+int mygetchar(void);         
+char* read_line();
+automaton_t* create_automaton();
+state_t* create_state(unsigned int id);
+list_t* create_list();
+state_t* create_new_state(automaton_t* automaton);
+char *strdup(const char *s);
+void insert_transition(list_t* list, char* str, state_t* state);
+state_t* find_transition(state_t* current_state, char* prefix);
+state_t* insert_string_from_state(automaton_t* automaton, char* s, 
+                                  state_t* starting_state);
+state_t* insert_string(automaton_t* automaton, char* s);
+void process_prompts(automaton_t* automaton);
+char* generate_continuation(automaton_t* automaton, 
+                            state_t* start_state, char* replayed_string);
+void reset_all_visited_flags(automaton_t* automaton);
+void reset(state_t* state);
+void dfs(state_t* state, state_t** ordered_states, int* idx, int max_size);
+state_t** ordered_dfs(automaton_t* automaton);
+int compress_states(automaton_t* automaton);
+int compute_num_states(automaton_t* automaton);
+int compute_total_freq(automaton_t* automaton);
+
+/* WHERE IT ALL HAPPENS ------------------------------------------------------*/
+int main(int argc, char *argv[]) {
+    automaton_t* automaton = create_automaton();
+    char* line;
+    int num_statements = 0, num_chars = 0;
+    while ((line = read_line()) && line[0] != '\0') {         
+        num_statements++;
+        char *token = strtok(line, "\n");
+        state_t* current_state = automaton->ini;
+        while(token) {
+            current_state = insert_string_from_state(
+                                automaton, token, current_state);             
+            num_chars += strlen(token);
+            token = strtok(NULL, "\n");
+        }
+        free(line);
+    }          
+    printf(SDELIM, 0);
+    printf(NOSFMT, num_statements);
+    printf(NOCFMT, num_chars);
+    printf(NPSFMT, automaton->nid);
+    
+    printf(SDELIM, 1);    
+    process_prompts(automaton); 
+    
+    printf(SDELIM, 2);
+    char *compression_steps_line = read_line();   
+    int compression_steps = atoi(compression_steps_line);
+    free(compression_steps_line);
+    for (int i = 0; i < compression_steps; i++) {
+        int compressed = compress_states(automaton);
+        if (!compressed) {
+            break;
+        }        
+    }
+    reset_all_visited_flags(automaton);
+    int num_states_after_compression = compute_num_states(automaton);    
+    int total_freq_after_compression = compute_total_freq(automaton);
+    ordered_dfs(automaton);
+
+    printf(NPSFMT, num_states_after_compression);
+    printf(TFQFMT, total_freq_after_compression);     
+    printf(MDELIM); 
+    process_prompts(automaton);    
+    printf(THEEND);
+   
+    return EXIT_SUCCESS;
+}
+// USEFUL FUNCTIONS ----------------------------------------------------------
+// An improved version of getchar(); skips carriage return characters.
+// NB: Adapted version of the mygetchar() function by Alistair Moffat
+int mygetchar() {
+    int c;
+    while ((c=getchar())==CRTRNC);
+    return c;
+}
+
+/*
+ Reads a line of input from standard input using the mygetchar() function.
+ Dynamically resizes the buffer to fit the input.
+ return A pointer to the read string. Must be freed by the caller.
+*/
+char* read_line() {
+    int size = 100; // Initial buffer size
+    char* line = malloc(size);
+    if (!line) {
+        return NULL;
+    }
+    int c;
+    int len = 0;
+    // Continue reading until end of file or newline
+    while ((c = mygetchar()) != EOF && c != '\n') {
+        line[len++] = c;
+        // If buffer is full, resize it
+        if (len == size) {
+            size *= 2;
+            char* resized = realloc(line, size);
+            // If realloc fails, clean up and return
+            if (!resized) {
+                free(line);
+                return NULL;
+            }
+            line = resized;
+        }
+    }
+    line[len] = '\0';
+    char* final_str = realloc(line, len + 1);
+    return final_str ? final_str : line;
+}
+
+/*
+ Creates and initializes a new automaton.
+ return A pointer to the newly created automaton.
+*/
+automaton_t* create_automaton() {
+    automaton_t* a = (automaton_t*)malloc(sizeof(automaton_t));
+    a->ini = create_state(0);  // Initial state with ID 0
+    a->nid = 1; 
+    return a;
+}
+
+/*
+ * Creates and initializes a new state with a given ID.
+ * param: id The ID for the new state.
+ * return A pointer to the newly created state.
+ */
+state_t* create_state(unsigned int id) {
+    state_t* s = (state_t*)malloc(sizeof(state_t));
+    s->id = id;
+    s->freq = 0;
+    s->visited = 0;
+    s->deleted = 0;
+    s->inactive = 0; 
+    s->outputs = create_list();
+    return s;
+}
+
+/*
+ Creates and initializes an empty list.
+ return A pointer to the newly created list.
+ */
+list_t* create_list() {
+    list_t* l = (list_t*)malloc(sizeof(list_t));
+    l->head = l->tail = NULL;
+    return l;
+}
+
+/*
+ Creates a new state for the automaton and assigns it the next available ID.
+ param: automaton The automaton in which the state is to be added.
+ return A pointer to the newly created state.
+ */
+state_t* create_new_state(automaton_t* automaton) {
+    // Use current available ID to create a state
+    state_t* s = create_state(automaton->nid);  
+    automaton->nid++; 
+    return s;
+}
+
+/*
+ Inserts a transition from a given state to another state with a string.
+ param: list The transition list to which the transition will be added.
+ param: str The transition string.
+ param: state The destination state for the transition.
+ */
+void insert_transition(list_t* list, char* str, state_t* state) {
+    node_t* new_node = (node_t*)malloc(sizeof(node_t));
+    new_node->str = strdup(str); 
+    if (!new_node->str) {
+        free(new_node);
+    }
+    new_node->state = state;
+    new_node->next = NULL;
+    if (!list->head) {
+        // If the list is empty, both head and tail point to the new node
+        list->head = list->tail = new_node;
+    } else {
+        // Otherwise, append the new node to the end of the list
+        list->tail->next = new_node;
+        list->tail = new_node;
+    }   
+}
+
+/*
+ Finds a transition from a state based on a given prefix string.
+ param: current_state The starting state.
+ param: prefix The transition string to look for.
+ return A pointer to the destination state of the transition, 
+ or NULL if not found.
+ */
+state_t* find_transition(state_t* current_state, char* prefix) {
+    // Check for null inputs or state without outputs
+    if (!current_state || !current_state->outputs) {        
+        return NULL;
+    }
+    node_t* node = current_state->outputs->head;
+    while (node) {
+        if (strcmp(node->str, prefix) == 0) {
+            // Return the destination state of the found transition
+            return node->state;
+        }
+        node = node->next;
+    }
+    return NULL;
+}
+
+/*
+ Inserts a string into the automaton, creating states and transitions as needed.
+ Starts the insertion from a given state.
+ param: automaton A pointer to the automaton.
+ param: s The string to insert.
+ param: starting_state The state from which to start the insertion.
+ return A pointer to the last state created or updated.
+ */
+state_t* insert_string_from_state(automaton_t* automaton, 
+                                  char* s, state_t* starting_state) {
+    state_t* current_state = starting_state;
+    char prefix[2] = {0, 0};
+    // Iterate through the string for each character to be inserted.
+    for (int i = 0; i < strlen(s); i++) {
+        prefix[0] = s[i]; 
+        // Find a transition for the current character from the current state.
+        state_t* next_state = find_transition(current_state, prefix);
+        // If no such transition exists, create a new state and transition.
+        if (next_state == NULL) {
+            next_state = create_new_state(automaton);
+            char* transition_str = strdup(prefix);
+            insert_transition(current_state->outputs, 
+                              transition_str, next_state);            
+        }
+        current_state = next_state;
+        // Increment the frequency of the current state
+        current_state->freq++;
+    }
+    return current_state;
+}
+
+/*
+ Inserts a string into the automaton starting from its initial state.
+ param: automaton A pointer to the automaton.
+ param: s The string to insert.
+ return A pointer to the last state created or updated.
+ */
+state_t* insert_string(automaton_t* automaton, char* s) {
+    return insert_string_from_state(automaton, s, automaton->ini);        
+}
+
+/*
+ Processes user prompts, attempting to 
+       generate responses by walking the automaton.
+ If a string cannot be fully generated, it produces a truncated version.
+ param: automaton A pointer to the automaton.
+ */
+void process_prompts(automaton_t* automaton) {     
+    char* line;
+    // Read each user prompt until an empty line is encountered
+    while ((line = read_line()) && line[0] != '\0') {
+        char replayed_string[100] = "";
+        char *token = strtok(line, "\n");
+        state_t* current_state = automaton->ini;
+        int canGenerate = 1;
+        // Process each token of the user prompt
+        while(token) {
+            state_t* next_state = find_transition(current_state, token);
+            // If a transition for the token doesn't exist, 
+            // try to build a response character-by-character.            
+            if (!next_state) {
+                char prefix[2] = {0, 0};
+                for(int i = 0; i < strlen(token); i++) {
+                    prefix[0] = token[i];
+                    state_t* char_transition = 
+                        find_transition(current_state, prefix);
+                    if(char_transition) {
+                        strcat(replayed_string, prefix);
+                        current_state = char_transition;
+                        if(i == strlen(token) - 1) { 
+                            break;
+                        }
+                    } else {
+                        strcat(replayed_string, prefix);                        
+                        canGenerate = 0; // If not found, can't generate string
+                        break;
+                    }
+                }
+                break;
+            } else {
+                strcat(replayed_string, token);
+                current_state = next_state;
+            }
+            token = strtok(NULL, "\n");
+        }
+        // If string can be generated, get the continuation
+        if(canGenerate) {
+            char* continuation = generate_continuation
+                (automaton, current_state, replayed_string);
+            strcat(replayed_string, continuation);
+            free(continuation);
+        } else {
+            strcat(replayed_string, "...");
+        }
+        replayed_string[37] = '\0'; // Limiting the output length
+        printf("%s\n", replayed_string);
+        free(line);
+    }
+}
+
+/* 
+ Attempts to generate a continuation string based on the state of the automaton.
+ Uses frequency data and string values to choose which path to take when 
+ multiple paths are available. 
+ param: automaton The automaton used to generate the continuation.
+ param: start_state The current state from where the continuation should begin.
+ param: replayed_string The already generated 
+                       string to which the continuation will be appended.
+ return The continuation string.
+ */
+char* generate_continuation(automaton_t* automaton, 
+                            state_t* start_state, char* replayed_string) {
+    // Allocate memory for the result string
+    char *result = (char *) malloc(38 * sizeof(char));
+    memset(result, 0, 38);  
+    
+    // If no start state is provided, return with '...'
+    if(!start_state) {
+        strcpy(result, "...");
+        return result;
+    }   
+    state_t* current_state = start_state;
+    strcat(result, "...");  
+    
+    // Process until no further transitions are possible
+    while(current_state) {
+        node_t* node = current_state->outputs->head;
+        node_t* max_freq_node = NULL;
+             
+        int num_transitions = 0;
+        node_t* temp = node;
+        while (temp) {
+            num_transitions++;
+            temp = temp->next;
+        }              
+        while(node) {
+            if (!max_freq_node||node->state->freq > max_freq_node->state->freq||
+                (node->state->freq == max_freq_node->state->freq &&
+                 num_transitions > 1 &&
+                 node->str[0] > max_freq_node->str[0])){
+                max_freq_node = node;
+            }
+            node = node->next;
+        }  
+        
+        // If a node with maximum frequency is identified, append its string
+        // to the result and move to its target state
+        if (max_freq_node) {
+            strcat(result, max_freq_node->str);
+            current_state = max_freq_node->state;
+        } else {
+            current_state = NULL;  
+        }
+    }
+    
+    // Ensure the combined length of replayed_string and 
+    // result is within constraints
+    int combined_length = strlen(replayed_string) + strlen(result);
+    if (combined_length > 37) {
+        result[37 - strlen(replayed_string)] = '\0';
+    }
+    return result;
+} 
+
+/*
+ Resets the visited flags for all states within the automaton to 0.
+ Uses a recursive helper function, `_reset`, to reset each state's flag. 
+ param: automaton The automaton whose states' visited flags need to be reset.
+*/
+ void reset_all_visited_flags(automaton_t* automaton) {
+    // Recursive helper function to reset the visited flag 
+    // of a state and its outputs
+    void reset(state_t* state) {
+        if (!state || state->visited == 0) {
+            return;
+        }
+        
+        state->visited = 0;  // Reset visited flag
+        node_t* node = state->outputs->head;
+        while (node) {
+            reset(node->state);
+            node = node->next;
+        }
+    }
+    reset(automaton->ini); // Start reset from the initial state
+} 
+
+/*
+ Conducts a depth-first search on the automaton, 
+ recording states in the order they finish.
+ param: state The current state in the dfs traversal.
+ param: ordered_states An array to store the states 
+        in the order they finish during dfs.
+ param: idx A pointer to the current index in the ordered_states array.
+ param: max_size Maximum size of the ordered_states array.
+*/
+void dfs(state_t* state, state_t** ordered_states, int* idx, int max_size) { 
+    if (state->inactive || state->deleted) {
+        return; // skip if state is inactive or deleted
+    }
+    state->visited = 1;
+    node_t* node = state->outputs->head;
+    
+    // Recursively visit each output state of the current state
+    while (node) {
+        dfs(node->state, ordered_states, idx, max_size);
+        node = node->next;
+    }    
+    if (*idx < max_size) {
+        ordered_states[(*idx)++] = state;
+    }                
+}
+
+/*
+ Conducts a depth-first search on the automaton, 
+ returning an array of states in the order they finish。
+ param automaton: The automaton on which dfs needs to be conducted.
+ return An array of states in the order they finish during dfs.
+ */
+state_t** ordered_dfs(automaton_t* automaton) {
+    int idx = 0;
+    // Allocate memory for the ordered_states array
+    state_t** ordered_states = 
+        (state_t**) malloc(automaton->nid * sizeof(state_t*));
+    
+    for (int i = 0; i < automaton->nid; i++) {              
+            ordered_states[i] = NULL;
+    }    
+       
+    // Reset all visited flags before starting DFS
+    reset_all_visited_flags(automaton); 
+    // Start DFS from the initial state of the automaton
+    dfs(automaton->ini, ordered_states, &idx, automaton->nid);    
+    return ordered_states;
+}
+
+/*
+ Compresses states of an automaton to reduce its size. 
+ param: automaton The automaton to be compressed.
+ return The number of state compressions performed.
+ (After debug testing, I seem to know why the frequency is incorrect 
+ because the compressor is not compressing in the correct order. 
+ But I didn't find the cause,it could be a deviation 
+ in the compressor or the dfs logic.)
+*/
+int compress_states(automaton_t* automaton) {
+    // Get states in depth-first order
+    state_t** ordered_states = ordered_dfs(automaton);
+    int compressions = 0;
+
+    for(int i = 0; i < automaton->nid - 1; i++) {
+        state_t* state_x = ordered_states[i];
+        
+        if(state_x && !state_x->deleted && state_x->outputs->head) {
+            state_t* state_y = state_x->outputs->head->state;
+            
+            // Check if the state_y can be compressed with state_x           
+            if(state_y && !state_y->deleted &&
+                     state_y->outputs->head && !state_y->outputs->head->next) {
+               
+                // Create a new arc label by combining 
+                // labels from state_x and state_y
+                char* new_arc_label =(char*) malloc(
+                    strlen(state_x->outputs->head->str) + 
+                    strlen(state_y->outputs->head->str)+1
+                );                              
+                strcpy(new_arc_label, state_x->outputs->head->str);
+                strcat(new_arc_label, state_y->outputs->head->str);
+
+                // Remove the original arc from state_x to state_y
+                node_t* old_node = state_x->outputs->head;
+                state_x->outputs->head = old_node->next;
+                if (!state_x->outputs->head) {
+                    state_x->outputs->tail = NULL;
+                }
+                free(old_node->str);
+                free(old_node);
+                
+                // Insert the new compressed transition
+                insert_transition(state_x->outputs, new_arc_label, 
+                                  state_y->outputs->head->state);
+                free(new_arc_label);
+
+                // Mark state_y as deleted
+                state_y->deleted = 1;
+
+                // Track the number of compressions
+                compressions++;                               
+                break;
+            }
+        }
+    }
+    free(ordered_states);
+    return compressions;
+}
+
+/*
+ Computes the total number of active states in the automaton. 
+ param: automaton The automaton.
+ return The number of active states.
+*/
+int compute_num_states(automaton_t* automaton) {
+    int count = 0;
+    state_t** ordered_states = ordered_dfs(automaton);
+
+    for (int i = 0; i < automaton->nid; i++) {
+        // Count only active and non-deleted states
+        if (ordered_states[i] && !ordered_states[i]->inactive 
+                    && !ordered_states[i]->deleted) {
+            count++;
+        }
+    }
+
+    free(ordered_states);
+    return count;
+}
+
+/*
+ Computes the total frequency of states in the automaton. 
+ param: automaton The automaton.
+ return The total frequency.
+*/
+int compute_total_freq(automaton_t* automaton) {
+    int total_freq = 0;
+    state_t** ordered_states = ordered_dfs(automaton);
+
+    for (int i = 0; i < automaton->nid; i++) {
+        // Sum frequencies of only active states
+        if (ordered_states[i]) {
+            if(!ordered_states[i]->inactive){
+                total_freq += ordered_states[i]->freq;
+            }                    
+        }                   
+    }
+    free(ordered_states);
+    return total_freq;
+}
+
+/* THE END -------------------------------------------------------------------*/
