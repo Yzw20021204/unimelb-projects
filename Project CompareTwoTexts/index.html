@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Similarity Checker</title>
+    <!-- link external CSS style sheets for styling -->
+    <link rel="stylesheet" href="project.css">
+</head>
+<body>
+    <!-- Dipaly the main heading  -->
+    <h1>Document Similarity Checker</h1>
+    <p>Enter documents to each boxes, then click the button to compare them.</p>
+    <!-- two textareas for inputting texts -->.
+    <textarea id="Document1" rows="10" cols="60"></textarea>
+    <textarea id="Document2" rows="10" cols="60"></textarea>
+    <br>
+    <input type="submit" value="Compare" onclick="compareTwoText()">
+    
+    <!--Show the calculate table-->
+    <h2>Word Count</h2>
+    <div id="table"></div>
+
+    <!-- Show comparison results --->
+    <h2>Results</h2>
+    <div id="results"></div>
+
+    <!-- link to external JavaScript file -->.
+    <script src="project.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+/* Add margins to the submit button */
+input[type="submit"] {
+    margin-top: 15px;
+    }
+
+/* Set the font, size and background color for the first text area */
+textarea[id="Document1"] {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 15px;
+    background-color: rgb(160, 250, 196);
+}
+
+/* Set the font, size and background color for the second text area */
+textarea[id="Document2"] {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 15px;
+    background-color: rgb(248, 231, 194);
+}
+
+/* Styling for the word count table */
+#wordCountTable {
+    width: 12%;
+    border-collapse: collapse;
+}
+#wordCountTable th {
+    text-align: left;
+}
+#wordCountTable th, #wordCountTable td {
+    border: 3px solid black;
+    padding: 5px;
+}
+#wordCountTable .wordColumn {
+    width: 6%;
+}
+#wordCountTable .countColumn {
+    width: 6%;
+}
+#wordCountTable .D1Column {
+    background-color: rgb(160, 250, 196);
+}
+#wordCountTable .D2Column {
+    background-color: rgb(248, 231, 194);
+}
+
+.red-text {
+    color: red;
+}
+
